@@ -1,0 +1,45 @@
+[
+  {
+    "id": "attempt_1718431200",
+    "topic": "Docker",
+    "timestamp": "2026-06-14T10:00:00.000000",
+    "score": 8,
+    "total_questions": 10,
+    "percentage": 80.0,
+    "user_answers": {
+      "1": "Containers",
+      "2": "docker run",
+      "3": "volume",
+      "4": "Dockerfile",
+      "5": "docker-compose"
+    }
+  },
+  {
+    "id": "attempt_1718451200",
+    "topic": "Git",
+    "timestamp": "2026-06-14T15:30:00.000000",
+    "score": 6,
+    "total_questions": 10,
+    "percentage": 60.0,
+    "user_answers": {
+      "1": "git init",
+      "2": "git commit",
+      "3": "git push",
+      "4": "git merge"
+    }
+  },
+  {
+    "id": "attempt_1718471200",
+    "topic": "Kubernetes",
+    "timestamp": "2026-06-15T09:15:00.000000",
+    "score": 9,
+    "total_questions": 10,
+    "percentage": 90.0,
+    "user_answers": {
+      "1": "Pod",
+      "2": "Deployment",
+      "3": "Service",
+      "4": "kubectl"
+    }
+  }
+]

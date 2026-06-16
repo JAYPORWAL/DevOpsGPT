@@ -1,0 +1,63 @@
+{
+  "topics": {
+    "Docker": {
+      "topic": "Docker",
+      "completed": true,
+      "last_studied": "2026-06-16T13:29:09.517333",
+      "quizzes_taken": 1,
+      "best_score": 80.0
+    },
+    "Kubernetes": {
+      "topic": "Kubernetes",
+      "completed": true,
+      "last_studied": "2026-06-15T09:20:00.000000",
+      "quizzes_taken": 1,
+      "best_score": 90.0
+    },
+    "Jenkins": {
+      "topic": "Jenkins",
+      "completed": false,
+      "last_studied": "2026-06-15T11:28:02.000000",
+      "quizzes_taken": 0,
+      "best_score": null
+    },
+    "Terraform": {
+      "topic": "Terraform",
+      "completed": false,
+      "last_studied": "2026-06-15T11:28:02.000000",
+      "quizzes_taken": 0,
+      "best_score": null
+    },
+    "AWS": {
+      "topic": "AWS",
+      "completed": false,
+      "last_studied": "2026-06-15T11:28:02.000000",
+      "quizzes_taken": 0,
+      "best_score": null
+    },
+    "Linux": {
+      "topic": "Linux",
+      "completed": false,
+      "last_studied": "2026-06-15T11:28:02.000000",
+      "quizzes_taken": 0,
+      "best_score": null
+    },
+    "Git": {
+      "topic": "Git",
+      "completed": true,
+      "last_studied": "2026-06-14T15:35:00.000000",
+      "quizzes_taken": 1,
+      "best_score": 60.0
+    },
+    "CI/CD": {
+      "topic": "CI/CD",
+      "completed": false,
+      "last_studied": "2026-06-15T11:28:02.000000",
+      "quizzes_taken": 0,
+      "best_score": null
+    }
+  },
+  "weak_topics": [
+    "Git"
+  ]
+}

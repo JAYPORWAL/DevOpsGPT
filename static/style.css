@@ -1,0 +1,149 @@
+/* Professional DevOps Dark Cyberpunk Theme */
+
+/* Import Outfit or Inter Font */
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Outfit', sans-serif;
+    background-color: #0d1117;
+    color: #e6edf3;
+}
+
+/* Glassmorphic main container */
+.stApp {
+    background: radial-gradient(circle at top right, #161b22, #0d1117, #06090f);
+}
+
+/* Sidebar Custom Styling */
+section[data-testid="stSidebar"] {
+    background-color: #0c0f16 !important;
+    border-right: 1px solid rgba(0, 240, 255, 0.15) !important;
+    box-shadow: 4px 0 20px rgba(0, 0, 0, 0.5);
+}
+
+section[data-testid="stSidebar"] hr {
+    border-color: rgba(0, 240, 255, 0.2);
+}
+
+/* Metric Display override */
+div[data-testid="stMetric"] {
+    background: rgba(255, 255, 255, 0.02) !important;
+    border: 1px solid rgba(0, 240, 255, 0.1) !important;
+    padding: 15px !important;
+    border-radius: 12px !important;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+    transition: all 0.3s ease-in-out !important;
+}
+
+div[data-testid="stMetric"]:hover {
+    transform: translateY(-2px) !important;
+    border: 1px solid rgba(0, 240, 255, 0.35) !important;
+    box-shadow: 0 4px 20px rgba(0, 240, 255, 0.15) !important;
+}
+
+/* Metric text colors */
+div[data-testid="stMetricLabel"] {
+    color: #8b949e !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+}
+
+div[data-testid="stMetricValue"] {
+    color: #00f0ff !important;
+    font-size: 28px !important;
+    font-weight: 800 !important;
+}
+
+/* Glassmorphic cards for roadmaps and tasks */
+.devops-card {
+    background: rgba(22, 27, 34, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    transition: transform 0.2s, border-color 0.2s;
+}
+
+.devops-card:hover {
+    border-color: rgba(0, 240, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+/* Cyber accents */
+.cyber-title {
+    background: linear-gradient(90deg, #00f0ff, #8a2be2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    font-weight: 800;
+}
+
+.cyber-subtitle {
+    color: #8b949e;
+    font-size: 0.95rem;
+    margin-bottom: 2rem;
+}
+
+/* Custom styled buttons */
+div.stButton > button {
+    background: linear-gradient(135deg, #0d3b66, #001f3f) !important;
+    color: #00f0ff !important;
+    border: 1px solid #00f0ff !important;
+    border-radius: 8px !important;
+    padding: 8px 20px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    transition: all 0.3s ease-in-out !important;
+    box-shadow: 0 4px 10px rgba(0, 240, 255, 0.05) !important;
+}
+
+div.stButton > button:hover {
+    background: linear-gradient(135deg, #00f0ff, #8a2be2) !important;
+    color: #ffffff !important;
+    border: 1px solid #ffffff !important;
+    box-shadow: 0 4px 15px rgba(0, 240, 255, 0.3) !important;
+    transform: translateY(-1px);
+}
+
+/* Chat container updates */
+.stChatMessage {
+    background-color: rgba(22, 27, 34, 0.4) !important;
+    border: 1px solid rgba(255, 255, 255, 0.04) !important;
+    border-radius: 12px !important;
+    padding: 12px !important;
+    margin-bottom: 10px !important;
+}
+
+.stChatMessage[data-testid="stChatMessageUser"] {
+    background-color: rgba(138, 43, 226, 0.08) !important;
+    border: 1px solid rgba(138, 43, 226, 0.2) !important;
+}
+
+.stChatMessage[data-testid="stChatMessageAssistant"] {
+    background-color: rgba(0, 240, 255, 0.05) !important;
+    border: 1px solid rgba(0, 240, 255, 0.15) !important;
+}
+
+/* Input boxes border override */
+div[data-baseweb="input"] {
+    background-color: #0d1117 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    border-radius: 8px !important;
+}
+
+div[data-baseweb="input"]:focus-within {
+    border-color: #00f0ff !important;
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.2) !important;
+}
+
+/* Tabs formatting */
+button[data-baseweb="tab"] {
+    color: #8b949e !important;
+    font-weight: 600 !important;
+}
+
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #00f0ff !important;
+    border-bottom-color: #00f0ff !important;
+}
