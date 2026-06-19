@@ -64,8 +64,8 @@ class GeminiService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
         self.client = None
-        self.model_name = "gemini-flash-latest"
-        self.fallback_model = "gemini-flash-latest"
+        self.model_name = "gemini-2.5-flash"
+        self.fallback_model = "gemini-2.5-flash"
         
         # Circuit Breaker state
         self.failure_count = 0
@@ -73,6 +73,8 @@ class GeminiService:
         self.last_failure_time = 0.0
         self.cooldown_period = 60.0    # seconds
         self.failure_threshold = 3     # 3 consecutive failures to open circuit
+        self.last_api_error = None
+        self.last_api_success_time = None
 
         if self.api_key:
             self._setup_client()
@@ -102,6 +104,8 @@ class GeminiService:
 
     def _check_circuit(self) -> bool:
         """Returns True if the circuit allows API requests, False if it is open (should fallback)."""
+        cooldown_remaining = max(0.0, self.cooldown_period - (time.time() - self.last_failure_time)) if self.circuit_state == "OPEN" else 0.0
+        logger.info(f"Circuit Breaker Status - State: {self.circuit_state} | Failure Count: {self.failure_count} | Cooldown Remaining: {cooldown_remaining:.2f}s")
         if self.circuit_state == "OPEN":
             elapsed = time.time() - self.last_failure_time
             if elapsed >= self.cooldown_period:
@@ -137,6 +141,8 @@ class GeminiService:
         and fallbacks in structured log messages.
         """
         feature = kwargs.pop("feature_name", "GeminiAPI")
+        model_name = kwargs.get("model", self.model_name)
+        endpoint = str(self.client.base_url) if self.client else "unknown"
         
         # Check Circuit Breaker
         if not self._check_circuit():
@@ -150,19 +156,23 @@ class GeminiService:
             try:
                 # Add native timeout to OpenAI request
                 kwargs["timeout"] = 60.0
-                logger.info(f"[{feature}] Attempt {retries + 1} of 4...")
-                
+                logger.info(f"API Request Executing - Model Name: {model_name} | Endpoint: {endpoint} | Feature: {feature} | Attempt: {retries + 1} of 4 | Start Time: {time.time()}")
+                logger.info("START GEMINI REQUEST")
                 result = api_func(*args, **kwargs)
+                logger.info("END GEMINI REQUEST")
                 latency = time.time() - start_time
                 
                 # Successful execution
                 self._record_success()
-                logger.info(f"Feature: {feature} | Latency: {latency:.2f}s | Retries: {retries} | Fallback: False | Error: None")
+                self.last_api_success_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                logger.info(f"API Request Success - Model Name: {model_name} | Endpoint: {endpoint} | Feature: {feature} | Success Time: {time.time()} | Latency: {latency:.2f}s | Retries: {retries} | Fallback: False | Error: None")
                 return result
                 
             except Exception as e:
                 err_msg = str(e)
-                logger.warning(f"[{feature}] Attempt {retries + 1} failed. Error: {err_msg}")
+                self.last_api_error = f"{type(e).__name__}: {err_msg}"
+                latency = time.time() - start_time
+                logger.error(f"API Request Failure - Model Name: {model_name} | Endpoint: {endpoint} | Feature: {feature} | Failure Time: {time.time()} | Error: {err_msg} | Latency: {latency:.2f}s")
                 self._record_failure()  # Record attempt failure immediately to trip circuit breaker
                 
                 retries += 1
@@ -209,6 +219,8 @@ class GeminiService:
                     raise ValueError("Gemini returned an empty content parsed payload.")
                 return parsed_content
             except Exception as e:
+                import traceback
+                logger.error(f"Fallback triggered in generate_devops_content. Exception Type: {type(e).__name__}, Message: {str(e)}\nStack Trace:\n{traceback.format_exc()}")
                 logger.warning(f"Content generation failed with model {model}: {e}")
                 if i == len(models_to_try) - 1:
                     logger.error(f"generate_devops_content ({topic}) failed. Swapping to offline generated pack.")
@@ -256,6 +268,8 @@ class GeminiService:
                     raise ValueError("Gemini returned an empty evaluation payload.")
                 return parsed_eval
             except Exception as e:
+                import traceback
+                logger.error(f"Fallback triggered in evaluate_interview_answer. Exception Type: {type(e).__name__}, Message: {str(e)}\nStack Trace:\n{traceback.format_exc()}")
                 logger.warning(f"Interview evaluation failed with model {model}: {e}")
                 if i == len(models_to_try) - 1:
                     logger.error("evaluate_interview_answer failed. Swapping to offline rule-based evaluation.")
@@ -291,6 +305,8 @@ class GeminiService:
                 if content:
                     yield content
         except Exception as e:
+            import traceback
+            logger.error(f"Fallback triggered in stream_chat_response. Exception Type: {type(e).__name__}, Message: {str(e)}\nStack Trace:\n{traceback.format_exc()}")
             logger.warning(f"Mentor Chat stream failed. Routing to offline fallback. Detail: {e}")
             yield from self._stream_offline_mentor_answer(messages[-1]["content"])
 

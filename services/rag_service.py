@@ -31,7 +31,10 @@ class GeminiOpenAIEmbeddings(Embeddings):
         while retries <= 3:
             try:
                 kwargs["timeout"] = 30.0
-                return func(*args, **kwargs)
+                logger.info("START GEMINI REQUEST")
+                res = func(*args, **kwargs)
+                logger.info("END GEMINI REQUEST")
+                return res
             except Exception as e:
                 retries += 1
                 if retries <= 3:
