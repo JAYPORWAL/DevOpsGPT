@@ -164,12 +164,12 @@ def display_mermaid(explanation: str):
                     {mermaid_code}
                     </pre>
                 </div>
-                <script type="module">
-                    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+                <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+                <script>
                     mermaid.initialize({{ startOnLoad: true, theme: 'dark', securityLevel: 'loose' }});
                 </script>
                 """
-                st.components.v1.html(html_code, height=450, scrolling=True)
+                st.iframe(html_code, height=450)
     else:
         st.markdown(explanation)
 
@@ -308,7 +308,15 @@ if page == "📊 Dashboard & Analytics":
             for file in os.listdir(st.session_state.storage_service.chat_dir):
                 os.remove(os.path.join(st.session_state.storage_service.chat_dir, file))
             
-            st.success("All data purged successfully. Please refresh the page.")
+            # Reset session state variables
+            st.session_state.current_topic = ""
+            st.session_state.current_content = None
+            st.session_state.quiz_answers = {}
+            st.session_state.quiz_submitted = False
+            st.session_state.evaluation_results = {}
+            
+            st.success("All data purged successfully. Refreshing...")
+            st.rerun()
 
 
 # ==========================================
@@ -337,20 +345,31 @@ elif page == "🧠 Learning Hub":
             value=preset_topic if preset_topic else ""
         )
 
+    # Clear current content if the input topic is different from the currently loaded topic
+    topic_normalized = custom_topic.strip()
+    if topic_normalized != st.session_state.current_topic:
+        st.session_state.current_content = None
+
     generate_clicked = st.button("Generate DevOps Study Pack")
     
     # Topic load handling
-    if custom_topic and (generate_clicked or (st.session_state.current_topic != custom_topic and not st.session_state.current_content)):
+    if generate_clicked and custom_topic:
         topic_normalized = custom_topic.strip()
         
         # Check cache first (Smart Caching)
         cached_content = st.session_state.storage_service.load_from_cache(topic_normalized)
         
-        if cached_content and not generate_clicked:
+        if cached_content:
             st.session_state.current_topic = topic_normalized
             st.session_state.current_content = cached_content
             # Mark studied
             st.session_state.storage_service.update_progress_on_completion(topic_normalized, completed=True)
+            
+            # Reset quiz state for the new topic
+            st.session_state.quiz_answers = {}
+            st.session_state.quiz_submitted = False
+            st.session_state.evaluation_results = {}
+            
             st.success(f"⚡ Loaded {topic_normalized} from local cache!")
         else:
             # Force generate/fetch from Gemini
@@ -375,13 +394,17 @@ elif page == "🧠 Learning Hub":
                     
                     st.balloons()
                     st.success(f"🚀 Study Pack for {topic_normalized} generated and cached successfully!")
-                except Exception as e:
-                    st.error(f"Failed to generate study pack: {e}")
+                except Exception:
+                    st.error("Failed to generate study pack. The generative service is temporarily offline or rate-limited. Showing fallback options.")
                     st.stop()
 
     # Render Content
     if st.session_state.current_content:
         content: DevOpsContent = st.session_state.current_content
+        
+        # Check if the content pack was generated offline
+        if "(AI content generator temporarily unavailable" in content.explanation:
+            st.warning("⚠️ AI content generator temporarily unavailable. Showing offline material.")
         
         st.markdown(f"## Currently Studying: **{content.topic}**")
         
@@ -459,7 +482,7 @@ elif page == "🧠 Learning Hub":
                 mime="application/json"
             )
     else:
-        st.info("No topic selected. Enter a DevOps topic above to generate study modules!")
+        st.info("Select a topic and click Generate DevOps Study Pack.")
 
 
 # ==========================================
@@ -518,12 +541,17 @@ elif page == "💼 Interview Prep":
                             )
                             # Store in session state
                             st.session_state.evaluation_results[eval_key] = evaluation
-                        except Exception as e:
-                            st.error(f"Failed to grade answer: {e}")
+                        except Exception:
+                            st.error("Failed to grade answer. The evaluation service is temporarily offline or rate-limited. Please try again.")
 
             # Display saved results
             if eval_key in st.session_state.evaluation_results:
                 result = st.session_state.evaluation_results[eval_key]
+                
+                # Check for offline evaluation warning indicator
+                if "AI evaluator temporarily unavailable" in result.improved_answer:
+                    st.warning("⚠️ AI evaluator temporarily unavailable. Showing offline evaluation.")
+                    
                 st.markdown(f"##### **Result Score:** `{result.score}/10`")
                 
                 # Render score bar
@@ -697,8 +725,8 @@ elif page == "🔍 RAG Knowledge Assistant":
                         try:
                             chunks_count = st.session_state.rag_service.ingest_document(filepath, uploaded_file.name)
                             st.success(f"Indexed {uploaded_file.name} ({chunks_count} chunks)")
-                        except Exception as e:
-                            st.error(f"Ingestion failed for {uploaded_file.name}: {e}")
+                        except Exception:
+                            st.error(f"Ingestion failed for {uploaded_file.name}. The document processing service is temporarily offline or rate-limited.")
                 else:
                     st.caption(f"ℹ️ {uploaded_file.name} already ingested.")
 
@@ -751,12 +779,18 @@ elif page == "🔍 RAG Knowledge Assistant":
 
                         # Stream response
                         st.markdown("#### AI Augmented Answer:")
+                        gemini_svc = st.session_state.gemini_service
+                        if not gemini_svc.is_configured() or gemini_svc.circuit_state == "OPEN":
+                            st.warning("⚠️ AI generation temporarily unavailable. Displaying retrieved knowledge.")
                         try:
                             # Use Gemini streaming capability
                             messages = [{"role": "user", "content": prompt}]
                             st.write_stream(st.session_state.gemini_service.stream_chat_response(messages))
-                        except Exception as e:
-                            st.error(f"Failed to generate answer: {e}")
+                        except Exception:
+                            st.warning("⚠️ AI generation temporarily unavailable. Displaying retrieved knowledge.")
+                            # fallback print
+                            fallback_ans = gemini_svc._generate_offline_mentor_answer(prompt)
+                            st.write(fallback_ans)
 
 
 # ==========================================
@@ -830,9 +864,15 @@ elif page == "💬 Mentor Chat":
                     # Retrieve full conversation history for model context
                     full_history = storage.load_chat_history(st.session_state.chat_session_id)
                     try:
+                        gemini_svc = st.session_state.gemini_service
+                        if not gemini_svc.is_configured() or gemini_svc.circuit_state == "OPEN":
+                            st.warning("⚠️ AI mentor temporarily unavailable. Showing offline guidance.")
                         response_stream = st.session_state.gemini_service.stream_chat_response(full_history)
                         full_response = st.write_stream(response_stream)
                         # Save Response
                         storage.save_chat_message(st.session_state.chat_session_id, "assistant", full_response)
-                    except Exception as e:
-                        st.error(f"Error streaming response: {e}")
+                    except Exception:
+                        st.warning("⚠️ AI mentor temporarily unavailable. Showing offline guidance.")
+                        fallback_ans = gemini_svc._generate_offline_mentor_answer(prompt)
+                        st.write(fallback_ans)
+                        storage.save_chat_message(st.session_state.chat_session_id, "assistant", fallback_ans)

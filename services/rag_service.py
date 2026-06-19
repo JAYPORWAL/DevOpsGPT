@@ -15,7 +15,7 @@ class GeminiOpenAIEmbeddings(Embeddings):
     """
     Custom LangChain Embeddings implementation that wraps OpenAI Client calls
     directly to bypass LangChain's internal 501 Unimplemented headers when using
-    Google's OpenAI compatibility layer.
+    Google's OpenAI compatibility layer. Includes retry and exponential backoff.
     """
     def __init__(self, api_key: str, model: str = "gemini-embedding-2"):
         self.client = OpenAI(
@@ -24,15 +24,34 @@ class GeminiOpenAIEmbeddings(Embeddings):
         )
         self.model = model
 
+    def _execute_with_retry(self, func, *args, **kwargs):
+        import time
+        retries = 0
+        backoff_times = [2.0, 4.0, 8.0]
+        while retries <= 3:
+            try:
+                kwargs["timeout"] = 30.0
+                return func(*args, **kwargs)
+            except Exception as e:
+                retries += 1
+                if retries <= 3:
+                    logger.warning(f"Embedding attempt {retries} failed: {e}. Retrying...")
+                    time.sleep(backoff_times[retries - 1])
+                else:
+                    logger.error(f"Embedding failed after 4 attempts: {e}")
+                    raise e
+
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
-        response = self.client.embeddings.create(
+        response = self._execute_with_retry(
+            self.client.embeddings.create,
             input=texts,
             model=self.model
         )
         return [item.embedding for item in response.data]
 
     def embed_query(self, text: str) -> List[float]:
-        response = self.client.embeddings.create(
+        response = self._execute_with_retry(
+            self.client.embeddings.create,
             input=[text],
             model=self.model
         )
