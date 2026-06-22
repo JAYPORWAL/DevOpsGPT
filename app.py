@@ -98,6 +98,9 @@ st.session_state.rag_service = rag_service
 if "current_topic" not in st.session_state:
     st.session_state.current_topic = ""
 
+if "selected_topic" not in st.session_state:
+    st.session_state.selected_topic = ""
+
 if "current_content" not in st.session_state:
     st.session_state.current_content = None
 
@@ -326,6 +329,7 @@ if page == "📊 Dashboard & Analytics":
             
             # Reset session state variables
             st.session_state.current_topic = ""
+            st.session_state.selected_topic = ""
             st.session_state.current_content = None
             st.session_state.quiz_answers = {}
             st.session_state.quiz_submitted = False
@@ -351,11 +355,12 @@ elif page == "🧠 Learning Hub":
     # Select core topic or type custom
     col_input, col_preset = st.columns([2, 1])
     with col_preset:
-        current_topic_val = st.session_state.get("current_topic", "")
         options = [""] + CORE_TOPICS
+        selected_topic_val = st.session_state.selected_topic
+        
         default_index = 0
-        if current_topic_val in options:
-            default_index = options.index(current_topic_val)
+        if selected_topic_val in options:
+            default_index = options.index(selected_topic_val)
             
         preset_topic = st.selectbox(
             "Select Core Topic:",
@@ -364,31 +369,41 @@ elif page == "🧠 Learning Hub":
             help="Choose a pre-defined core topic or type in a custom topic to the left."
         )
     with col_input:
+        if preset_topic != "" and preset_topic != selected_topic_val:
+            input_default = preset_topic
+        else:
+            input_default = selected_topic_val
+            
         custom_topic = st.text_input(
             "Enter Topic Name (e.g. Kubernetes, Ansible, Docker Multi-stage):",
-            value=preset_topic if preset_topic else current_topic_val
+            value=input_default
         )
 
-    # Clear current content if the input topic is different from the currently loaded topic
+    # Normalize selection and update session state immediately
     topic_normalized = custom_topic.strip()
-    if topic_normalized != st.session_state.current_topic:
+    if topic_normalized != st.session_state.selected_topic:
+        st.session_state.selected_topic = topic_normalized
+        st.rerun()
+
+    # Clear current content if the selected topic is different from the currently loaded topic
+    if st.session_state.selected_topic != st.session_state.current_topic:
         st.session_state.current_content = None
 
     generate_clicked = st.button("Generate DevOps Study Pack")
     
     cached_content = None
-    if generate_clicked and custom_topic:
-        topic_normalized = custom_topic.strip()
-        cached_content = st.session_state.storage_service.load_from_cache(topic_normalized)
+    if generate_clicked and st.session_state.selected_topic:
+        cached_content = st.session_state.storage_service.load_from_cache(st.session_state.selected_topic)
         
+    logger.info(f"Selected Topic: {st.session_state.selected_topic}")
+    logger.info(f"Current Loaded Topic: {st.session_state.current_topic}")
     logger.info(f"Generate Clicked: {generate_clicked}")
-    logger.info(f"Current Topic: {st.session_state.current_topic}")
     logger.info(f"Current Content Exists: {st.session_state.current_content is not None}")
     logger.info(f"Cache Hit: {cached_content is not None}")
     
     # Topic load handling
-    if generate_clicked and custom_topic:
-        topic_normalized = custom_topic.strip()
+    if generate_clicked and st.session_state.selected_topic:
+        topic_normalized = st.session_state.selected_topic
         
         if cached_content:
             st.session_state.current_topic = topic_normalized
