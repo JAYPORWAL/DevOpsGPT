@@ -51,8 +51,8 @@
     },
     "CI/CD": {
       "topic": "CI/CD",
-      "completed": false,
-      "last_studied": "2026-06-15T11:28:02.000000",
+      "completed": true,
+      "last_studied": "2026-06-22T13:44:59.890752",
       "quizzes_taken": 0,
       "best_score": null
     }
