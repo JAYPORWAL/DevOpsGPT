@@ -158,37 +158,147 @@ st.sidebar.info(
     "• CI/CD Pipelines"
 )
 
+# Helper for sanitizing Mermaid diagram syntax
+def sanitize_mermaid(mermaid_code: str) -> Optional[str]:
+    # 1. Remove markdown fences before rendering
+    code = mermaid_code
+    code = re.sub(r"^```mermaid\s*\n", "", code, flags=re.IGNORECASE)
+    code = re.sub(r"^```\s*\n", "", code, flags=re.IGNORECASE)
+    code = re.sub(r"\n```$", "", code)
+    code = code.strip()
+    
+    lines = [line.strip() for line in code.splitlines() if line.strip()]
+    if not lines:
+        return None
+        
+    # Get first non-comment word
+    first_word = ""
+    for line in lines:
+        if not line.startswith("%%"):
+            parts = line.split()
+            if parts:
+                first_word = parts[0]
+                break
+                
+    valid_prefixes = ("graph", "flowchart", "sequenceDiagram", "stateDiagram")
+    if first_word not in valid_prefixes:
+        return None
+        
+    # 2. Clean up flowchart/graph arrows and quote node labels
+    if first_word in ("graph", "flowchart"):
+        # Replace -> with --> unless it's already part of --> or -.-> or ->>
+        code = re.sub(r'(?<![-.])->(?![->])', '-->', code)
+        # Replace => with ==> unless it's part of ==>
+        code = re.sub(r'(?<![=])=>(?![=>])', '==>', code)
+        # Replace ->> with -->
+        code = re.sub(r'->>', '-->', code)
+        # Replace -->> with -->
+        code = re.sub(r'-->>', '-->', code)
+        
+        # Quote node labels if not already quoted
+        def quote_label(label: str) -> str:
+            label = label.strip()
+            if not label:
+                return '""'
+            if label.startswith('"') and label.endswith('"'):
+                inner = label[1:-1]
+                escaped_inner = inner.replace('"', '\\"')
+                return f'"{escaped_inner}"'
+            else:
+                escaped_label = label.replace('"', '\\"')
+                return f'"{escaped_label}"'
+                
+        # Stadium ([label])
+        code = re.sub(r'([a-zA-Z0-9_-]+)\(\s*\[(.*?)\]\s*\)', lambda m: f'{m.group(1)}([{quote_label(m.group(2))}])', code)
+        # Database [(label)]
+        code = re.sub(r'([a-zA-Z0-9_-]+)\[\s*\((.*?)\)\s*\]', lambda m: f'{m.group(1)}[({quote_label(m.group(2))})]', code)
+        # Circle ((label))
+        code = re.sub(r'([a-zA-Z0-9_-]+)\(\s*\((.*?)\)\s*\)', lambda m: f'{m.group(1)}(({quote_label(m.group(2))}))', code)
+        # Hexagon {{label}}
+        code = re.sub(r'([a-zA-Z0-9_-]+)\{\s*\{(.*?)\}\s*\}', lambda m: f'{m.group(1)}{{{{{quote_label(m.group(2))}}}}}', code)
+        # Subroutine [[label]]
+        code = re.sub(r'([a-zA-Z0-9_-]+)\[\s*\[(.*?)\]\s*\]', lambda m: f'{m.group(1)}[[{quote_label(m.group(2))}]]', code)
+        
+        # Single shapes (ensure they are not part of double shapes)
+        # Square [label]
+        code = re.sub(r'([a-zA-Z0-9_-]+)\s*(?<!\[)\[(?!\[)(.*?)(?<!\])\](?!\])', lambda m: f'{m.group(1)}[{quote_label(m.group(2))}]', code)
+        # Round (label)
+        code = re.sub(r'([a-zA-Z0-9_-]+)\s*(?<!\()\((?!\()(.*?)(?<!\))\)(?!\))', lambda m: f'{m.group(1)}({quote_label(m.group(2))})', code)
+        # Curly {label}
+        code = re.sub(r'([a-zA-Z0-9_-]+)\s*(?<!\{)\{(?!\{)(.*?)(?<!\})\}(?!\})', lambda m: f'{m.group(1)}{{{quote_label(m.group(2))}}}', code)
+        # Asymmetric >label]
+        code = re.sub(r'([a-zA-Z0-9_-]+)\s*>\s*(.*?)\s*\]', lambda m: f'{m.group(1)}>{quote_label(m.group(2))}]', code)
+        
+    return code
+
+# Helper for validating Mermaid diagram syntax structure
+def validate_mermaid(code: str) -> bool:
+    if not code:
+        logger.error("MERMAID VALIDATION FAILED: Code is empty")
+        return False
+        
+    lines = [line.strip() for line in code.splitlines() if line.strip() and not line.strip().startswith("%%")]
+    if not lines:
+        logger.error("MERMAID VALIDATION FAILED: No non-comment lines")
+        return False
+        
+    first_line = lines[0]
+    valid_prefixes = ("graph", "flowchart", "sequenceDiagram", "stateDiagram")
+    first_word = first_line.split()[0] if first_line.split() else ""
+    if first_word not in valid_prefixes:
+        logger.error(f"MERMAID VALIDATION FAILED: Invalid start word '{first_word}'")
+        return False
+        
+    # Check balanced brackets/delimiters
+    bracket_pairs = [('[', ']'), ('(', ')'), ('{', '}'), ('"', '"')]
+    for open_b, close_b in bracket_pairs:
+        if open_b == close_b:
+            if code.count(open_b) % 2 != 0:
+                logger.error(f"MERMAID VALIDATION FAILED: Unbalanced delimiters '{open_b}'")
+                return False
+        else:
+            if code.count(open_b) != code.count(close_b):
+                logger.error(f"MERMAID VALIDATION FAILED: Unbalanced brackets '{open_b}' and '{close_b}'")
+                return False
+                
+    logger.info("MERMAID VALIDATION SUCCESS")
+    return True
+
 # Helper for rendering Mermaid Diagrams in Streamlit
 def display_mermaid(explanation: str):
     """
-    Finds Mermaid code blocks, extracts them, renders them using Mermaid CDN,
-    and displays the remaining explanation as standard markdown.
+    Finds Mermaid code blocks, extracts them, sanitizes/validates them,
+    and renders them using Mermaid CDN. If validation fails, shows a code block.
     """
     mermaid_blocks = re.findall(r"```mermaid\s*\n(.*?)\n```", explanation, re.DOTALL)
     
     if mermaid_blocks:
-        # Separate code blocks and explanation
         split_text = re.split(r"```mermaid\s*\n.*?\n```", explanation, flags=re.DOTALL)
         
         for idx, text_part in enumerate(split_text):
             if text_part.strip():
                 st.markdown(text_part)
             
-            # If there's a corresponding mermaid block, render it
             if idx < len(mermaid_blocks):
-                mermaid_code = mermaid_blocks[idx].strip()
-                html_code = f"""
-                <div style="background-color: #0c0f16; border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 8px; padding: 15px; margin: 10px 0; overflow-x: auto;">
-                    <pre class="mermaid" style="background: transparent; text-align: center;">
-                    {mermaid_code}
-                    </pre>
-                </div>
-                <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-                <script>
-                    mermaid.initialize({{ startOnLoad: true, theme: 'dark', securityLevel: 'loose' }});
-                </script>
-                """
-                st.iframe(html_code, height=450)
+                raw_code = mermaid_blocks[idx]
+                sanitized_code = sanitize_mermaid(raw_code)
+                
+                if sanitized_code and validate_mermaid(sanitized_code):
+                    html_code = f"""
+                    <div style="background-color: #0c0f16; border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 8px; padding: 15px; margin: 10px 0; overflow-x: auto;">
+                        <pre class="mermaid" style="background: transparent; text-align: center;">
+                        {sanitized_code}
+                        </pre>
+                    </div>
+                    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.6/dist/mermaid.min.js"></script>
+                    <script>
+                        mermaid.initialize({{ startOnLoad: true, theme: 'dark', securityLevel: 'loose' }});
+                    </script>
+                    """
+                    st.iframe(html_code, height=450)
+                else:
+                    st.info("📊 Diagram Code (Mermaid rendering bypassed due to validation rules):")
+                    st.code(raw_code.strip(), language="mermaid")
     else:
         st.markdown(explanation)
 
