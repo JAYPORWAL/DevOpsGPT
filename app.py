@@ -104,6 +104,34 @@ if "selected_topic" not in st.session_state:
 if "current_content" not in st.session_state:
     st.session_state.current_content = None
 
+if "preset_topic_widget" not in st.session_state:
+    st.session_state.preset_topic_widget = ""
+
+if "custom_topic_widget" not in st.session_state:
+    st.session_state.custom_topic_widget = ""
+
+# Callbacks for widgets
+def on_preset_change():
+    val = st.session_state.preset_topic_widget
+    st.session_state.selected_topic = val
+    # Sync custom text input widget value to match
+    st.session_state.custom_topic_widget = val
+    # Clear loaded content since topic changed
+    st.session_state.current_content = None
+    st.session_state.current_topic = ""
+
+def on_custom_change():
+    val = st.session_state.custom_topic_widget.strip()
+    st.session_state.selected_topic = val
+    # Sync preset dropdown selection
+    if val in CORE_TOPICS:
+        st.session_state.preset_topic_widget = val
+    else:
+        st.session_state.preset_topic_widget = ""
+    # Clear loaded content since topic changed
+    st.session_state.current_content = None
+    st.session_state.current_topic = ""
+
 if "chat_session_id" not in st.session_state:
     st.session_state.chat_session_id = str(uuid.uuid4())
 
@@ -167,15 +195,16 @@ def sanitize_mermaid(mermaid_code: str) -> Optional[str]:
     code = re.sub(r"\n```$", "", code)
     code = code.strip()
     
-    lines = [line.strip() for line in code.splitlines() if line.strip()]
+    lines = code.splitlines()
     if not lines:
         return None
         
-    # Get first non-comment word
+    # Find first non-comment line to check diagram type
     first_word = ""
     for line in lines:
-        if not line.startswith("%%"):
-            parts = line.split()
+        stripped = line.strip()
+        if stripped and not stripped.startswith("%%"):
+            parts = stripped.split()
             if parts:
                 first_word = parts[0]
                 break
@@ -184,50 +213,78 @@ def sanitize_mermaid(mermaid_code: str) -> Optional[str]:
     if first_word not in valid_prefixes:
         return None
         
-    # 2. Clean up flowchart/graph arrows and quote node labels
     if first_word in ("graph", "flowchart"):
-        # Replace -> with --> unless it's already part of --> or -.-> or ->>
-        code = re.sub(r'(?<![-.])->(?![->])', '-->', code)
-        # Replace => with ==> unless it's part of ==>
-        code = re.sub(r'(?<![=])=>(?![=>])', '==>', code)
-        # Replace ->> with -->
-        code = re.sub(r'->>', '-->', code)
-        # Replace -->> with -->
-        code = re.sub(r'-->>', '-->', code)
+        # Combined regex pattern for all node shapes to prevent double-matching
+        id_pattern = r'([a-zA-Z0-9_][a-zA-Z0-9_-]*)'
         
-        # Quote node labels if not already quoted
+        # Order matters: double shapes before single shapes
+        shapes = [
+            (r'\(\s*\[(.*?)\s*\]\s*\)', lambda lbl: f'([{lbl}])'),      # Stadium
+            (r'\[\s*\((.*?)\s*\)\s*\]', lambda lbl: f'[({lbl})]'),      # Database
+            (r'\(\s*\((.*?)\s*\)\s*\)', lambda lbl: f'(({lbl}))'),      # Circle
+            (r'\{\s*\{(.*?)\s*\}\s*\}', lambda lbl: f'{{{{{lbl}}}}}'),  # Hexagon
+            (r'\[\s*\[(.*?)\s*\]\s*\]', lambda lbl: f'[[{lbl}]]'),      # Subroutine
+            (r'\[\s*(.*?)\s*\]',       lambda lbl: f'[{lbl}]'),        # Square
+            (r'\(\s*(.*?)\s*\)',       lambda lbl: f'({lbl})'),        # Round
+            (r'\{\s*(.*?)\s*\}',       lambda lbl: f'{{{lbl}}}'),      # Curly
+            (r'>\s*(.*?)\s*\]',        lambda lbl: f'>{lbl}]'),        # Asymmetric
+        ]
+        
+        # Build the combined pattern with explicit double capturing groups for all shapes
+        pattern_parts = [f'({pat})' for pat, _ in shapes]
+        combined_pattern = id_pattern + r'\s*(?:' + '|'.join(pattern_parts) + r')'
+        
         def quote_label(label: str) -> str:
             label = label.strip()
             if not label:
                 return '""'
+            # If already fully quoted, unquote first to prevent double quoting
             if label.startswith('"') and label.endswith('"'):
                 inner = label[1:-1]
-                escaped_inner = inner.replace('"', '\\"')
+                escaped_inner = inner.replace('\\"', '"').replace('"', '\\"')
                 return f'"{escaped_inner}"'
             else:
                 escaped_label = label.replace('"', '\\"')
                 return f'"{escaped_label}"'
+
+        def replace_node_double(match):
+            node_id = match.group(1)
+            for idx, (_, template_fn) in enumerate(shapes):
+                whole_shape = match.group(2 * idx + 2)
+                if whole_shape is not None:
+                    label = match.group(2 * idx + 3)
+                    quoted = quote_label(label)
+                    return f'{node_id}{template_fn(quoted)}'
+            return match.group(0)
+            
+        processed_lines = []
+        for line in lines:
+            stripped = line.strip()
+            # Skip diagram headers, comments, subgraphs, end, style, classDef, click, direction
+            if (stripped.startswith(valid_prefixes) or 
+                stripped.startswith(("%%", "subgraph", "end", "style", "linkStyle", "classDef", "class", "direction", "click"))):
+                # Replace -> and => arrows in plain lines (e.g. connections in subgraph or main)
+                # but preserve style declarations
+                if not stripped.startswith(("style", "linkStyle", "classDef", "class", "%%")):
+                    line = re.sub(r'(?<![-.])->(?![->])', '-->', line)
+                    line = re.sub(r'(?<![=])=>(?![=>])', '==>', line)
+                    line = re.sub(r'->>', '-->', line)
+                    line = re.sub(r'-->>', '-->', line)
+                processed_lines.append(line)
+                continue
                 
-        # Stadium ([label])
-        code = re.sub(r'([a-zA-Z0-9_-]+)\(\s*\[(.*?)\]\s*\)', lambda m: f'{m.group(1)}([{quote_label(m.group(2))}])', code)
-        # Database [(label)]
-        code = re.sub(r'([a-zA-Z0-9_-]+)\[\s*\((.*?)\)\s*\]', lambda m: f'{m.group(1)}[({quote_label(m.group(2))})]', code)
-        # Circle ((label))
-        code = re.sub(r'([a-zA-Z0-9_-]+)\(\s*\((.*?)\)\s*\)', lambda m: f'{m.group(1)}(({quote_label(m.group(2))}))', code)
-        # Hexagon {{label}}
-        code = re.sub(r'([a-zA-Z0-9_-]+)\{\s*\{(.*?)\}\s*\}', lambda m: f'{m.group(1)}{{{{{quote_label(m.group(2))}}}}}', code)
-        # Subroutine [[label]]
-        code = re.sub(r'([a-zA-Z0-9_-]+)\[\s*\[(.*?)\]\s*\]', lambda m: f'{m.group(1)}[[{quote_label(m.group(2))}]]', code)
-        
-        # Single shapes (ensure they are not part of double shapes)
-        # Square [label]
-        code = re.sub(r'([a-zA-Z0-9_-]+)\s*(?<!\[)\[(?!\[)(.*?)(?<!\])\](?!\])', lambda m: f'{m.group(1)}[{quote_label(m.group(2))}]', code)
-        # Round (label)
-        code = re.sub(r'([a-zA-Z0-9_-]+)\s*(?<!\()\((?!\()(.*?)(?<!\))\)(?!\))', lambda m: f'{m.group(1)}({quote_label(m.group(2))})', code)
-        # Curly {label}
-        code = re.sub(r'([a-zA-Z0-9_-]+)\s*(?<!\{)\{(?!\{)(.*?)(?<!\})\}(?!\})', lambda m: f'{m.group(1)}{{{quote_label(m.group(2))}}}', code)
-        # Asymmetric >label]
-        code = re.sub(r'([a-zA-Z0-9_-]+)\s*>\s*(.*?)\s*\]', lambda m: f'{m.group(1)}>{quote_label(m.group(2))}]', code)
+            # Replace arrows
+            line = re.sub(r'(?<![-.])->(?![->])', '-->', line)
+            line = re.sub(r'(?<![=])=>(?![=>])', '==>', line)
+            line = re.sub(r'->>', '-->', line)
+            line = re.sub(r'-->>', '-->', line)
+            
+            # Apply node shape sanitization
+            line = re.sub(combined_pattern, replace_node_double, line)
+            processed_lines.append(line)
+            
+        code = "\n".join(processed_lines)
+        return code
         
     return code
 
@@ -270,6 +327,8 @@ def display_mermaid(explanation: str):
     Finds Mermaid code blocks, extracts them, sanitizes/validates them,
     and renders them using Mermaid CDN. If validation fails, shows a code block.
     """
+    import streamlit.components.v1 as components
+    import base64
     mermaid_blocks = re.findall(r"```mermaid\s*\n(.*?)\n```", explanation, re.DOTALL)
     
     if mermaid_blocks:
@@ -283,21 +342,92 @@ def display_mermaid(explanation: str):
                 raw_code = mermaid_blocks[idx]
                 sanitized_code = sanitize_mermaid(raw_code)
                 
+                # Log all 4 outputs
+                logger.info(f"1. RAW MERMAID GENERATED:\n{raw_code}")
+                logger.info(f"2. CODE PASSED TO COMPONENTS:\n{sanitized_code}")
+                logger.info(f"3. CODE AFTER SANITIZATION:\n{sanitized_code}")
+                logger.info(f"4. CODE RENDERED IN BROWSER:\n{sanitized_code}")
+                
+                # Show raw code before rendering (debug mode)
+                st.caption("🔍 Raw generated diagram text:")
+                st.code(raw_code.strip(), language="mermaid")
+                
                 if sanitized_code and validate_mermaid(sanitized_code):
+                    # Safe passing of code to Javascript via base64 encoding to prevent string quote escaping issues
+                    encoded_code = base64.b64encode(sanitized_code.encode('utf-8')).decode('utf-8')
                     html_code = f"""
-                    <div style="background-color: #0c0f16; border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 8px; padding: 15px; margin: 10px 0; overflow-x: auto;">
-                        <pre class="mermaid" style="background: transparent; text-align: center;">
-                        {sanitized_code}
-                        </pre>
+                    <div id="mermaid-container" style="background-color: #0c0f16; border: 1px solid rgba(0, 240, 255, 0.15); border-radius: 8px; padding: 15px; margin: 10px 0; overflow-x: auto;">
+                        <div id="mermaid-svg" style="text-align: center;"></div>
                     </div>
                     <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.6/dist/mermaid.min.js"></script>
                     <script>
-                        mermaid.initialize({{ startOnLoad: true, theme: 'dark', securityLevel: 'loose' }});
+                        (async function() {{
+                            const container = document.getElementById('mermaid-container');
+                            const svgDiv = document.getElementById('mermaid-svg');
+                            
+                            try {{
+                                // Decode base64 UTF-8 string safely
+                                const binary = atob("{encoded_code}");
+                                const bytes = new Uint8Array(binary.length);
+                                for (let i = 0; i < binary.length; i++) {{
+                                    bytes[i] = binary.charCodeAt(i);
+                                }}
+                                const code = new TextDecoder('utf-8').decode(bytes);
+                                
+                                // Initialize mermaid manually with error rendering suppressed
+                                mermaid.initialize({{
+                                    startOnLoad: false,
+                                    theme: 'dark',
+                                    securityLevel: 'loose',
+                                    suppressErrorRendering: true
+                                }});
+                                
+                                // Parse validation first
+                                const isValid = await mermaid.parse(code, {{ suppressErrors: true }});
+                                if (!isValid) {{
+                                    throw new Error("Mermaid parse validation failed");
+                                }}
+                                
+                                // Render manually
+                                const {{ svg }} = await mermaid.render('mermaid-svg-render', code);
+                                svgDiv.innerHTML = svg;
+                            }} catch (e) {{
+                                console.error("Mermaid manual rendering failed:", e);
+                                
+                                // Re-decode code for display
+                                let codeToDisplay = "";
+                                try {{
+                                    const binary = atob("{encoded_code}");
+                                    const bytes = new Uint8Array(binary.length);
+                                    for (let i = 0; i < binary.length; i++) {{
+                                        bytes[i] = binary.charCodeAt(i);
+                                    }}
+                                    codeToDisplay = new TextDecoder('utf-8').decode(bytes);
+                                }} catch(err) {{
+                                    codeToDisplay = "Failed to load code source.";
+                                }}
+                                
+                                // Style container as streamlit warning card + code block fallback
+                                container.style.backgroundColor = 'transparent';
+                                container.style.border = 'none';
+                                container.style.padding = '0';
+                                container.style.margin = '0';
+                                
+                                const escapedCode = codeToDisplay.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                                
+                                container.innerHTML = `
+                                    <div style="background-color: #ffe0b2; color: #b78103; border-left: 6px solid #fb8c00; border-radius: 4px; padding: 16px; margin: 10px 0; font-family: sans-serif; font-size: 14px; text-align: left; font-weight: 500;">
+                                        ⚠️ Diagram rendering unavailable. Showing source diagram.
+                                    </div>
+                                    <pre style="background-color: #1e1e24; color: #e0e0e0; padding: 16px; border-radius: 4px; font-family: monospace; font-size: 14px; overflow-x: auto; margin: 10px 0; white-space: pre-wrap; word-break: break-all; text-align: left;">\${escapedCode}</pre>
+                                `;
+                            }}
+                        }})();
                     </script>
                     """
-                    st.iframe(html_code, height=450)
+                    components.html(html_code, height=450, scrolling=True)
                 else:
-                    st.info("📊 Diagram Code (Mermaid rendering bypassed due to validation rules):")
+                    st.warning("Diagram rendering unavailable. Showing source diagram.")
                     st.code(raw_code.strip(), language="mermaid")
     else:
         st.markdown(explanation)
@@ -466,38 +596,28 @@ elif page == "🧠 Learning Hub":
     col_input, col_preset = st.columns([2, 1])
     with col_preset:
         options = [""] + CORE_TOPICS
-        selected_topic_val = st.session_state.selected_topic
+        selected = st.session_state.selected_topic
         
         default_index = 0
-        if selected_topic_val in options:
-            default_index = options.index(selected_topic_val)
+        if selected in CORE_TOPICS:
+            default_index = options.index(selected)
             
         preset_topic = st.selectbox(
             "Select Core Topic:",
             options,
             index=default_index,
+            key="preset_topic_widget",
+            on_change=on_preset_change,
             help="Choose a pre-defined core topic or type in a custom topic to the left."
         )
     with col_input:
-        if preset_topic != "" and preset_topic != selected_topic_val:
-            input_default = preset_topic
-        else:
-            input_default = selected_topic_val
-            
+        custom_default = st.session_state.selected_topic
         custom_topic = st.text_input(
             "Enter Topic Name (e.g. Kubernetes, Ansible, Docker Multi-stage):",
-            value=input_default
+            value=custom_default,
+            key="custom_topic_widget",
+            on_change=on_custom_change
         )
-
-    # Normalize selection and update session state immediately
-    topic_normalized = custom_topic.strip()
-    if topic_normalized != st.session_state.selected_topic:
-        st.session_state.selected_topic = topic_normalized
-        st.rerun()
-
-    # Clear current content if the selected topic is different from the currently loaded topic
-    if st.session_state.selected_topic != st.session_state.current_topic:
-        st.session_state.current_content = None
 
     generate_clicked = st.button("Generate DevOps Study Pack")
     
