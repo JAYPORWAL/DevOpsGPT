@@ -188,6 +188,8 @@ st.sidebar.info(
 
 # Helper for sanitizing Mermaid diagram syntax
 def sanitize_mermaid(mermaid_code: str) -> Optional[str]:
+    if not mermaid_code:
+        return None
     # 1. Remove markdown fences before rendering
     code = mermaid_code
     code = re.sub(r"^```mermaid\s*\n", "", code, flags=re.IGNORECASE)
@@ -339,18 +341,21 @@ def display_mermaid(explanation: str):
                 st.markdown(text_part)
             
             if idx < len(mermaid_blocks):
-                raw_code = mermaid_blocks[idx]
-                sanitized_code = sanitize_mermaid(raw_code)
+                mermaid_code = mermaid_blocks[idx]
+                if not mermaid_code:
+                    st.warning("⚠️ Diagram rendering unavailable. Empty diagram code.")
+                    continue
+                sanitized_code = sanitize_mermaid(mermaid_code)
                 
                 # Log all 4 outputs
-                logger.info(f"1. RAW MERMAID GENERATED:\n{raw_code}")
+                logger.info(f"1. RAW MERMAID GENERATED:\n{mermaid_code}")
                 logger.info(f"2. CODE PASSED TO COMPONENTS:\n{sanitized_code}")
                 logger.info(f"3. CODE AFTER SANITIZATION:\n{sanitized_code}")
                 logger.info(f"4. CODE RENDERED IN BROWSER:\n{sanitized_code}")
                 
                 # Show raw code before rendering (debug mode)
                 st.caption("🔍 Raw generated diagram text:")
-                st.code(raw_code.strip(), language="mermaid")
+                st.code(mermaid_code.strip(), language="mermaid")
                 
                 if sanitized_code and validate_mermaid(sanitized_code):
                     # Safe passing of code to Javascript via base64 encoding to prevent string quote escaping issues
@@ -419,7 +424,7 @@ def display_mermaid(explanation: str):
                                     <div style="background-color: #ffe0b2; color: #b78103; border-left: 6px solid #fb8c00; border-radius: 4px; padding: 16px; margin: 10px 0; font-family: sans-serif; font-size: 14px; text-align: left; font-weight: 500;">
                                         ⚠️ Diagram rendering unavailable. Showing source diagram.
                                     </div>
-                                    <pre style="background-color: #1e1e24; color: #e0e0e0; padding: 16px; border-radius: 4px; font-family: monospace; font-size: 14px; overflow-x: auto; margin: 10px 0; white-space: pre-wrap; word-break: break-all; text-align: left;">\${escapedCode}</pre>
+                                    <pre style="background-color: #1e1e24; color: #e0e0e0; padding: 16px; border-radius: 4px; font-family: monospace; font-size: 14px; overflow-x: auto; margin: 10px 0; white-space: pre-wrap; word-break: break-all; text-align: left;">\${{escapedCode}}</pre>
                                 `;
                             }}
                         }})();
@@ -428,7 +433,7 @@ def display_mermaid(explanation: str):
                     components.html(html_code, height=450, scrolling=True)
                 else:
                     st.warning("Diagram rendering unavailable. Showing source diagram.")
-                    st.code(raw_code.strip(), language="mermaid")
+                    st.code(mermaid_code.strip(), language="mermaid")
     else:
         st.markdown(explanation)
 
